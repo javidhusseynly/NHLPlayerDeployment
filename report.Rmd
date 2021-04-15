@@ -1,0 +1,314 @@
+---
+title: "HTHSCI 1MO3 Final Project"
+author: "Javid Husseynly"
+date: "04/14/2021"
+output: pdf_document
+---
+
+# Introduction
+The deployment of NHL players has always been a highly-debated topic. Some coaches are accused of over-trusting experienced veterans, while some are targeted for giving young players too many chances. 
+
+Thanks to the internet, we have access to vast amounts of data relating to player deployment and performance from many years past. Today, we take a look at data from three different seasons, 1999-00, 2009-10 and 2019-20, to attempt to see how coaches have fared in the last twenty years.
+
+### Specifically, we will ask:
+* Do coaches have unjust biases in player deployment?
+* How do players fare given their deployment?
+* Are coaches heding in the right direction and making improvements?
+
+We get our data from hockey-reference.com, a publicly-available site that scrapes its data from official NHL game reports. 
+
+# Data Wranging Plan
+
+## Iteration 1
+
+### Phase 1
+
+* Read in .csv files
+* Remove unnecessary columns
+* Rename columns to be more clear
+* Convert age to a factor column
+* Separate 'Player' column
+  + Remove player name
+  + Send player id to its own 'id' column
+* Join basic and advanced statistics dataset for 2019
+
+
+
+
+### Phase 2
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(magrittr)
+library(reshape2)
+library(patchwork)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#Reading in .csv files
+basic1999 <- read_csv("basic1999.csv", skip = 1)
+basic2009 <- read_csv("basic2009.csv", skip = 1)
+basic2019 <- read_csv("basic2019.csv", skip = 1)
+advanced2019 <- read_csv("advanced2019.csv", skip = 1)
+glimpse(basic1999)
+```
+
+```{r}
+#Remove unnecessary columns
+basic1999 %<>% select(Player,Age,GP,PTS,TOI)
+basic2009 %<>% select(Player,Age,GP,PTS,TOI)
+basic2019 %<>% select(Player,Age,GP,PTS,TOI)
+advanced2019 %<>% select(Player,'CF%', 'oZS%')
+```
+
+```{r}
+#Rename columns to be more clear
+basic1999 %<>%
+  rename(
+    age = Age,
+    games_played = GP,
+    points = PTS,
+    time_on_ice = TOI
+  )
+
+basic2009 %<>%
+  rename(
+    age = Age,
+    games_played = GP,
+    points = PTS,
+    time_on_ice = TOI
+  )
+
+basic2019 %<>%
+  rename(
+    age = Age,
+    games_played = GP,
+    points = PTS,
+    time_on_ice = TOI
+  )
+
+advanced2019 %<>%
+  rename(
+    'corsi%' = 'CF%',
+    'offensive_zone_start_%' = 'oZS%'
+  )
+
+
+```
+
+# Results
+
+```{r}
+#Convert age to a factor column
+basic1999 %<>% mutate(age = as_factor(age)) 
+basic2009 %<>% mutate(age = as_factor(age)) 
+basic2019 %<>% mutate(age = as_factor(age))
+```
+
+
+```{r}
+#Separate 'Player' column
+basic1999 %<>% separate(Player, sep="\\\\", into=c(NA, "id"))
+basic1999 %$% table(id) %>% .[.>1]
+```
+* The uid for our tibbles can be **id**
+* We can perform our join on the **id** column
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+#Do the same for the other tibbles (output hidden to save space):
+basic2009 %<>% separate(Player, sep="\\\\", into=c(NA, "id"))
+basic2019 %<>% separate(Player, sep="\\\\", into=c(NA, "id"))
+advanced2019 %<>% separate(Player, sep="\\\\", into=c(NA, "id"))
+
+basic2009 %$% table(id) %>% .[.>1]
+basic2019 %$% table(id) %>% .[.>1]
+advanced2019 %$% table(id) %>% .[.>1]
+```
+
+
+```{r}
+#Join basic and advanced statistics dataset for 2019, checking dimensions before and after
+basic2019 %>% dim_desc()
+advanced2019 %>% dim_desc()
+all2019 <- left_join(basic2019, advanced2019, by="id")
+all2019 %>% dim_desc()
+```
+
+
+## Iteration 2
+
+### Phase 1
+
+* Check factor levels on 'age'
+* Check for NA Values
+* Check for strange #'s
+* Create total points, TOI columns
+* Group by age and create % of team points and % of league TOI columns
+
+```{r}
+#Check factor levels on 'age'
+basic1999 %>%
+  pull(age) %>%
+  levels()
+```
+
+```{r, results='hide'}
+#Do the same for the other tables (output hidden to save space):
+basic2009 %>%
+  pull(age) %>%
+  levels()
+
+all2019 %>%
+  pull(age) %>%
+  levels()
+```
+```{r}
+#Check for NA Values
+#Check for strange #'s
+basic1999 %>%
+  summary()
+```
+```{r,results='hide', message=FALSE, warning=FALSE}
+#Output hidden to save space
+basic2009 %>% 
+  summary()
+```
+
+* All numbers are reasonable
+* No NA Values
+
+```{r}
+all2019 %>% 
+  summary()
+```
+However, in our joined 2019 data, we have one missing value in **offensive_zone_start%**. We will be grouping by age and averaging this value later, so single imputation by mean should suffice.
+
+```{r}
+mean_val <- all2019 %>%
+  group_by(age) %>%
+  pull(`offensive_zone_start_%`) %>%
+  mean(na.rm = TRUE)
+all2019 %<>%
+  mutate(`offensive_zone_start_%` = if_else(is.na(`offensive_zone_start_%`), !!mean_val, `offensive_zone_start_%`))
+```
+
+We can now consider our data tidy and get to work:
+
+```{r}
+#Create total points, total TOI columns
+basic1999 %<>%
+  mutate(total_points = sum(points),
+         total_toi = sum(time_on_ice))
+basic2009 %<>%
+  mutate(total_points = sum(points),
+         total_toi = sum(time_on_ice))
+all2019 %<>%
+  mutate(total_points = sum(points),
+         total_toi = sum(time_on_ice))
+```
+
+```{r}
+#Group by age and create % of total points and % of total TOI columns
+basic1999 %<>%
+  group_by(age) %<>%
+  summarise('points%' = sum(points)/max(total_points) * 100,
+            'toi%' = sum(time_on_ice)/max(total_toi) * 100,)
+
+basic2009 %<>%
+  group_by(age) %<>%
+  summarise('points%' = sum(points)/max(total_points) * 100,
+            'toi%' = sum(time_on_ice)/max(total_toi) * 100,)
+
+all2019 %<>%
+  group_by(age) %<>%
+  summarise('points%' = sum(points)/max(total_points) * 100,
+            'toi%' = sum(time_on_ice)/max(total_toi) * 100,
+            'offensive_zone_start_%' = mean(`offensive_zone_start_%`),
+            'corsi%' = mean(`corsi%`))
+```
+
+Our data is now complete and ready for plotting:
+```{r}
+glimpse(all2019)
+```
+
+```{r,results='hide'}
+#output hidden to save space
+glimpse(basic1999)
+glimpse(basic2009)
+```
+
+```{r}
+basic1999_melt <- basic1999 %>%
+  melt(id=c("age"))
+basic2009_melt <- basic2009 %>%
+  melt(id=c("age"))
+```
+
+```{r}
+dist1999 <- basic1999_melt %>%
+  ggplot(aes(fill=variable,y=value,x=age)) +
+  geom_bar(position='dodge',stat='identity') +
+  labs(title='1999-00') +
+  ylab("Share of NHL Total (%)") +
+  xlab("Age")
+
+dist2009 <- basic2009_melt %>%
+  ggplot(aes(fill=variable,y=value,x=age)) +
+  geom_bar(position='dodge',stat='identity') +
+  labs(title='2009-10') +
+  ylab("Share of NHL Total (%)") +
+  xlab("Age")
+
+dist1999 / dist2009 + plot_annotation(title="Distribution of NHL Production and Ice Time by Age", subtitle = "The way a coach plays their players and how they produce in the time given.")
+```
+Here we compare the distribution of production (measured in points) and age in 1999 to 2009. In both years we see that players 31-35 were given a larger share of ice-time than their share of production. This points to common beliefs that coaches over-trust their veteran players.
+
+In comparing the two seasons, we see minor changes. For example, coaches failed to adjust for the increase in talent from ages 19-22: in 2009 those younger players produced better than in 199, but we see players given less ice-time in proportion to their production. We can also see that in 2009, the gap between ice-time and production of veteran players aged 31-36 increased, indicating that coaches actually got worse in that regard.
+
+
+
+```{r}
+all2019_melt <- all2019 %>%
+  select(c("age","points%","toi%")) %>%
+  melt(id=c("age"))
+  
+dist2019 <- all2019_melt %>%
+  ggplot(aes(fill=variable,y=value,x=age)) +
+  geom_bar(position='dodge',stat='identity') +
+  labs(title='Distribution of NHL Production and Ice Time by Age in 2019-20', caption="Each age group's share of the NHL's total ice time and points.") +
+  ylab("Share of NHL Total (%)") +
+  xlab("Age") 
+
+dist2019
+```
+By 2019, it seems coaches have figured it out, for the most part. We still see a slight hint that they are still over-playing players age 32+, but the gap is not as well-pronounced.
+
+One possible explanation for this is that coaches trust older players more defensively, which means they contribute in ways other than production. We can check how coaches have been deploying players with a statistic called offensive zone start % - the share of shifts the player starts in the offensive zone. Traditionally, a player with a lower OZS% would also have a lower CF%, because of the disadvantage of starting your shift in the defensive zone; and a low OZS% indicates that the coach trusts a player in his defensive end..
+
+Next, we can measure how their team has performed with them on the ice with a relatively new statistic: corsi. Corsi attempts to measure possession - it simply represents shot attempts. If a player has a 55% corsi for %, that means their team had 55% of the shot attempts with them on the ice.
+
+```{r}
+all2019 %>%
+  ggplot(aes(x=age)) +
+  geom_line(aes(y=`offensive_zone_start_%`), group=1, color='green', size=1.5) +
+  geom_line(aes(y=`corsi%`), group=1, color='purple', size=1.5) +
+  ylab("Percent") +
+  xlab("Age") +
+  labs(title="NHL Deployment and Performance by Age in 2019-20", caption="Differences in shift deployment and how each age group performs in those shifts.") +
+  geom_text(aes(x=5, y=53, label="OZS%"), color='green') +
+  geom_text(aes(x=5.5, y=45, label="CORSI FOR %"), color='purple')
+```
+This graph shows us there may be merit to that explanation. Players 23 and under are getting significantly more shifts that start in the offensive zone, but their corsi for % does not reflect the advantage they are getting. Similarly, players 33+ see a decrease in offensive zone shift starts, yet they maintain steady possession.
+
+# Conclusion
+The conclusion you reach depend on how you measure a player's success. If you believe that a player's most important contribution is his production, then our data would indicate that coaches have long-held a bias towards older players. They get more ice time than they give points, and that has been true going back to 1999, showing very little adjustment from coaches. Younger players have made more of their opportunities, producing at a higher clip than the ice time they receive, and older players have continued to get trust from their coach even when their production dips.
+
+However, if you look at it through the scope of the team, you might value possession more. In that case, it is shown that older players are given tougher shifts, starting in the defensive zone more often. Regardless, their team puts up equal, if not better, possession stats than the younger players getting fresh offensive starts. 
+
+A more definitive conclusion demands better measures of success. This could be viable with something like xGF% - a stat similar to CF% but with the improvement that each shot attempt is given more weight if it has a better chance of resulting in a goal. However, that is beyond the scope of this report.
+
+
+
+# References
+[Hockey-Reference](https://www.hockey-reference.com/) (click for link.)
